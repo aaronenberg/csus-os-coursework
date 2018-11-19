@@ -1,0 +1,277 @@
+SAMPLE RUNS AND COMMAND LINE ARGUMENTS
+
+SAMPLE RUN 1.
+-------------
+
+> buffer -s 5 -p 45 -c 13
+producer produced 557308169
+consumer consumed 557308169
+producer produced 1849168408
+consumer consumed 1849168408
+producer produced 996101536
+consumer consumed 996101536
+producer produced 1859854963
+producer produced 141986087
+producer produced 1435354287
+producer produced 1004231554
+consumer consumed 1859854963
+consumer consumed 141986087
+consumer consumed 1435354287
+producer produced 1846611871
+producer produced 986923965
+producer produced 1851724944
+producer produced 1422111196
+consumer consumed 1004231554
+producer produced 924626071
+consumer consumed 1846611871
+consumer consumed 986923965
+producer produced 140478127
+consumer consumed 1851724944
+producer produced 1857299450
+consumer consumed 1422111196
+producer produced 1855790465
+producer produced 577174342
+consumer consumed 924626071
+producer produced 130250956
+consumer consumed 140478127
+consumer consumed 1857299450
+producer produced 1005739514
+producer produced 1623071885
+consumer consumed 1855790465
+producer produced 1416537714
+consumer consumed 577174342
+consumer consumed 130250956
+producer produced 174389653
+producer produced 1673814938
+consumer consumed 1005739514
+producer produced 1973699994
+consumer consumed 1623071885
+producer produced 562422266
+consumer consumed 1416537714
+producer produced 1420603235
+
+SAMPLE RUN 2.
+-------------
+
+> buffer -s 5 -p 8 -c 61
+producer produced 1367172083
+producer produced 936048326
+consumer consumed 1367172083
+consumer consumed 936048326
+producer produced 507482129
+producer produced 1364614522
+consumer consumed 507482129
+consumer consumed 1364614522
+producer produced 1795737256
+consumer consumed 1795737256
+producer produced 1794176618
+consumer consumed 1794176618
+producer produced 885632497
+producer produced 1345922408
+consumer consumed 885632497
+consumer consumed 1345922408
+producer produced 1602713531
+consumer consumed 1602713531
+producer produced 76818780
+producer produced 1793179695
+
+CODE PRINTOUT "buffer.c".
+-------------------------
+
+#include <ctype.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <semaphore.h>
+#include <time.h>
+#include <unistd.h>
+#include "buffer.h"
+
+
+typedef struct
+{
+    buffer_item buffer[BUFFER_SIZE];
+    int in, out, count;
+    sem_t *full, *empty;
+    pthread_mutex_t *mutex;
+} sbuf_t;
+
+sbuf_t *
+init_sbuf()
+{
+    sbuf_t *buf;
+    buf = (sbuf_t *) malloc(sizeof(sbuf_t));
+    if (buf == NULL)
+        return NULL;
+
+    buf->in    = 0;
+    buf->out   = 0;
+    buf->count = 0;
+    buf->empty = (sem_t *) malloc(sizeof(sem_t));
+    sem_init(buf->empty, 0, BUFFER_SIZE);
+    buf->full  = (sem_t *) malloc(sizeof(sem_t));
+    sem_init(buf->full, 0, 0);
+    buf->mutex = (pthread_mutex_t *) malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(buf->mutex, NULL);
+    
+    return buf;
+}
+
+void
+delete_sbuf(sbuf_t *buf)
+{
+    pthread_mutex_destroy(buf->mutex);
+    free(buf->mutex);
+    sem_destroy(buf->full);
+    free(buf->full);
+    sem_destroy(buf->empty);
+    free(buf->empty);
+    free(buf);
+}
+
+int
+insert_item(buffer_item item, sbuf_t *sbuffer)
+{
+    int result = -1;
+
+    sem_wait(sbuffer->empty);
+    pthread_mutex_lock(sbuffer->mutex);
+    
+    if (sbuffer->count < BUFFER_SIZE) {
+        sbuffer->buffer[sbuffer->in] = item;
+        sbuffer->in++;
+        sbuffer->in %= BUFFER_SIZE;
+        sbuffer->count++;
+        result = 0;
+        printf("producer produced %d\n", item);
+    }
+
+    pthread_mutex_unlock(sbuffer->mutex);
+    sem_post(sbuffer->full);
+
+    return result;
+}
+
+void *
+producer(void *buf)
+{
+    sbuf_t *sbuffer;
+    buffer_item item;
+    pthread_t tid;
+    unsigned int now, seed;
+
+    sbuffer = (sbuf_t *) buf;
+    now = time(NULL);
+    tid = pthread_self();
+    seed = now^tid;
+
+    while (1) {
+        sleep(rand() % 5 + 1);
+        item = rand_r(&seed);
+
+        if (insert_item(item, sbuffer))
+            fprintf(stderr, "FAILURE: attempt insertion with full buffer\n");
+    }
+    return NULL;
+}
+
+int
+remove_item(buffer_item *item, sbuf_t *sbuffer)
+{
+    int result = -1;
+
+    sem_wait(sbuffer->full);
+    pthread_mutex_lock(sbuffer->mutex);
+
+    if (sbuffer->count > 0) {
+        *item = sbuffer->buffer[sbuffer->out];
+        sbuffer->out++;
+        sbuffer->out %= BUFFER_SIZE;
+        sbuffer->count--;
+        result = 0;
+        printf("consumer consumed %d\n", *item);
+    }
+
+    pthread_mutex_unlock(sbuffer->mutex);
+    sem_post(sbuffer->empty);
+
+    return result;
+}
+
+void *
+consumer(void *buf)
+{
+    sbuf_t *sbuffer;
+    buffer_item item;
+
+    sbuffer = (sbuf_t *) buf;
+
+    while (1) {
+        sleep(rand() % 5 + 1);
+
+        if (remove_item(&item, sbuffer))
+            fprintf(stderr, "FAILURE: attempt removal from empty buffer\n");
+    }
+    return NULL;
+}
+
+int
+main(int argc, char **argv)
+{
+    setbuf (stdout, NULL);
+
+    sbuf_t *sharedbuffer;
+    int duration, numproducers, numconsumers, numthreads;
+    int i, sflag, pflag, cflag;
+    char opt;
+
+    while ((opt = getopt(argc, argv, "s:p:c:")) != -1)
+    {
+        switch(opt)
+        {
+            case 's':
+                sflag = 1;
+                duration = atoi(optarg);
+                break;
+            case 'p':
+                pflag = 1;
+                numproducers = atoi(optarg);
+                break;
+            case 'c':
+                cflag = 1;
+                numconsumers = atoi(optarg);
+                break;
+            case '?':
+                break;
+            default:
+                abort();
+        }
+    }
+    opterr = 0;
+
+    if (sflag != 1 || cflag != 1 || pflag != 1) {
+        fprintf(stderr, "Missing required arguments\n");
+        printf("Usage: %s -s <duration> -p <nproducers> -c <nconsumers>\n", argv[0]);
+        exit(1);
+    }
+
+    numthreads = numproducers + numconsumers;
+    pthread_t tid[numthreads];
+
+    sharedbuffer = init_sbuf();
+
+    for (i = 0; i < numconsumers; i++) {
+        if (pthread_create(&tid[i], NULL, consumer, sharedbuffer))
+            fprintf(stderr, "Could not create thread\n");
+    }
+    for (i = 0; i < numproducers; i++) {
+        if (pthread_create(&tid[i], NULL, producer, sharedbuffer))
+            fprintf(stderr, "Could not create thread\n");
+    }
+
+    sleep(duration);
+
+    delete_sbuf(sharedbuffer);
+
+    return 0;
+}

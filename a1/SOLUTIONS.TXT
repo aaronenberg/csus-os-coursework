@@ -1,0 +1,93 @@
+Part A
+---------------------------------------------------------------------------------------
+What is the CPU type and model?
+
+Command:
+    lscpu | grep -e "Architecture" -e "Model name"
+Output:
+    Architecture: x86_64 Model name: Intel(R) Core(TM) i7-6700K CPU @ 4.00GHz
+
+---------------------------------------------------------------------------------------
+What version of the Linux kernel is being used?
+
+Command:
+cat /proc/version
+Output:
+Linux version 4.9.0-8-amd64 (debian-kernel@lists.debian.org) (gcc version 6.3.0 20170516 (Debian 6.3.0-18+deb9u1) ) #1 SMP Debian 4.9.110-3+deb9u4 (2018-08-21)
+
+---------------------------------------------------------------------------------------
+How long (in days, hours, and minutes) has it been since the system was last booted?
+
+Command:
+    uptime | awk '{ print $2" "$3" "$4" "$5 }' 
+Output:
+    up 452 days, 12:45,
+
+---------------------------------------------------------------------------------------
+How much of the total CPU time has been spent executing in user mode? System mode? Idle?
+
+Command:
+    iostat -c | tail -n3
+Output:
+    avg-cpu:  %user   %nice %system %iowait  %steal   %idle
+               1.55    0.00    0.54    0.26    0.00   97.64
+
+So for user mode   -  1.55% of cpu time,
+       kernel mode -  0.54% of cpu time,
+       idle        - 97.64% of cpu time
+
+---------------------------------------------------------------------------------------
+How much memory is configured into it?
+
+Command:
+    cat /proc/meminfo | grep MemTotal
+Output:
+    MemTotal:       16373996 kB
+
+---------------------------------------------------------------------------------------
+How much memory is currently available on it?
+
+Command:
+    cat /proc/meminfo | grep MemFree
+Output:
+    MemFree:        12008216 kB
+
+---------------------------------------------------------------------------------------
+How many disks read/write requests have been made?
+
+Command:
+    cat /proc/diskstats
+Output:
+    259       0 nvme0n1 80862 1 1472741 11548 31097 26161 1248472 89972 0 9292 103644
+    259       1 nvme0n1p1 219 0 9062 116 14 1 72 0 0 28 116
+    259       2 nvme0n1p2 80547 1 1460207 11420 29728 26160 1248400 89244 0 8564 100640
+      8       0 sda 1555 0 396811 756 2 0 1 0 0 692 756
+      8       1 sda1 1465 0 392619 744 1 0 1 0 0 680 744
+    254       0 dm-0 80374 0 1458212 14676 54720 0 1248400 265568 0 11800 280340
+    254       1 dm-1 28106 0 701538 6048 11704 0 112776 52268 0 3716 58328
+    254       2 dm-2 113 0 4656 24 0 0 0 0 0 16 24
+    254       3 dm-3 52034 0 751050 8744 41681 0 1135624 213340 0 8244 222112
+
+---------------------------------------------------------------------------------------
+Starting from the device name as the 0th column: 
+the 1st column is the number of reads completed
+and the 5th column is the number of writes completed.
+(80862 reads, 31097 writes)
+source: www.kernel.org/doc/Documentation/iostats.txt
+
+---------------------------------------------------------------------------------------
+How many context switches has the kernel performed?
+
+Command:
+    cat /proc/stat | grep ctxt
+Output:
+    ctxt 26850372
+
+---------------------------------------------------------------------------------------
+How many processes have been created since the system was booted?
+
+Command:
+    cat /proc/stat | grep processes
+Output:
+    processes 106186
+
